@@ -3,6 +3,7 @@ import digitalio
 import board
 import usb_midi
 import adafruit_midi
+import pwmio
 from adafruit_midi.midi_message import MIDIUnknownEvent
 from adafruit_midi.note_on import NoteOn
 from adafruit_midi.note_off import NoteOff
@@ -13,11 +14,17 @@ led = None
 
 RELAYS = [board.GP20, board.GP18, board.GP19]
 relays = []
+PWMS = [board.GP20, board.GP18, board.GP19]
+pwms = []
 
 midi_in = None
 
 pressed_midi = []
 current_keys = [0, 0, 0]
+
+start_duty_cycle = 65535
+end_duty_cycle = 10000
+transition_timeout = 0.003
 
 map_midi_to_keys = {
     64: [1, 1, 1],
@@ -57,16 +64,33 @@ map_midi_to_keys = {
 
 def init():
     global relays, midi_in
-    for r in RELAYS:
-        p = digitalio.DigitalInOut(r)
-        p.direction = digitalio.Direction.OUTPUT
-        p.value = False
-        relays.append(p)
+    #for pin in RELAYS:
+    #    r = digitalio.DigitalInOut(pin)
+    #    r.direction = digitalio.Direction.OUTPUT
+    #    r.value = False
+    #    relays.append(r)
+    for pin in PWMS:
+        p = pwmio.PWMOut(pin, frequency=1000000, duty_cycle=0)
+        pwms.append(p)
     midi_in = adafruit_midi.MIDI(midi_in=usb_midi.ports[0], midi_out=None, in_channel=(0,1,2))
 
 def set_solenoid(index: int, state: bool):
+    #set_solenoid_binary(index, state)
+    set_solenoid_pwm(index, state)
+
+def set_solenoid_binary(index: int, state: bool):
     print(f"set_solenoid: {index}:{state}")
     relays[index].value = state
+
+def set_solenoid_pwm(index, state):
+    print(f"set_solenoid_pwm: {index}:{state}, sdc: {start_duty_cycle}, edc: {end_duty_cycle}, tt: {transition_timeout}")
+    if state:
+        pwms[index].duty_cycle = start_duty_cycle
+        time.sleep(transition_timeout)
+        pwms[index].duty_cycle = end_duty_cycle
+    else:
+        pwms[index].duty_cycle = 0
+
 
 def control_manual(msg):
     if isinstance(msg, NoteOn):
@@ -126,14 +150,22 @@ def control_automatic(msg):
 
 
 def check_midi_in():
+    global start_duty_cycle, end_duty_cycle, transition_timeout
     msg = midi_in.receive()
 
-    if msg is not None and hasattr(msg, 'note'):
+    if msg is not None:
         print(f"check_midi_in: {msg}")
-        if msg.channel == 1 and msg.note in [48, 49, 50]:
-            control_manual(msg)
-        elif msg.channel == 0 and msg.note >= 64 and msg.note <= 91:
-            control_automatic(msg)
+        if hasattr(msg, 'note'):
+            if msg.channel == 1 and msg.note in [48, 49, 50]:
+                control_manual(msg)
+            elif msg.channel == 0 and msg.note >= 64 and msg.note <= 91:
+                control_automatic(msg)
+        #if hasattr(msg, 'control'):
+        #    if msg.control == 7:
+        #        transition_timeout = msg.value * 0.001
+        #        #start_duty_cycle = msg.value * 512
+        #    elif msg.control == 64:
+        #        end_duty_cycle = msg.value * 512
 
 def loop():
     while True:
