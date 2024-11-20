@@ -128,7 +128,7 @@ def control_automatic(msg):
 def check_midi_in():
     msg = midi_in.receive()
 
-    if msg is not None:
+    if msg is not None and hasattr(msg, 'note'):
         print(f"check_midi_in: {msg}")
         if msg.channel == 1 and msg.note in [48, 49, 50]:
             control_manual(msg)
